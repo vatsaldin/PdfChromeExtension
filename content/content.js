@@ -21,7 +21,7 @@
     container: null,
     elements: [],
     mode: 'pages',
-    cropMode: 'container',
+    cropMode: 'page',
     renderDelay: 900,
     scrollStepPercent: 90
   };
@@ -72,64 +72,239 @@
     return path.join(' > ');
   }
 
+  const PAGE_SELECTORS = [
+    // Standard PDF.js and web document viewers
+    '.page[data-page-number]',
+    '.pdfViewer .page',
+    '[data-page-number]',
+    '.pdf-page',
+    '.page',
+    '.page-container',
+    '.page-view',
+    '.page-wrapper',
+    '.rendered-page',
+    '.document-page',
+    '.doc-page',
+    '.preview-page',
+    '.sheet',
+    '.slide',
+    '.pdfPage',
+    // Custom viewer data attributes
+    '[data-page]',
+    '[data-page-index]',
+    '[data-page-no]',
+    '[data-page-id]',
+    '[data-page-num]',
+    // ID prefixes (pdf2htmlEX, etc.)
+    'div[id^="pageContainer"]',
+    'div[id^="page-"]',
+    'div[id^="page_"]',
+    'div[id^="pf"]',
+    // ARIA roles
+    'div[role="region"][aria-label*="page" i]',
+    'div[aria-label*="page " i]',
+    // Google Drive
+    '.ndfHFb-c4YZDc-Wrql6b',
+    // Canvas wrappers & canvases
+    '.canvasWrapper',
+    'canvas.pdf-canvas',
+    'canvas[data-page-number]'
+  ];
+
+  function isCandidatePage(el) {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    if (el.id === 'pdf-snapper-hud' || el.closest('#pdf-snapper-hud')) return false;
+
+    // Filter out sidebar thumbnails to avoid selecting miniature previews instead of actual pages
+    if (el.closest('#sidebarContainer, #thumbnailView, .thumbnail, .thumbnailView, .pdf-sidebar, [role="navigation"]')) {
+      return false;
+    }
+
+    const rect = el.getBoundingClientRect();
+    const styleW = parseFloat(el.style.width) || 0;
+    const styleH = parseFloat(el.style.height) || 0;
+    const w = Math.max(rect.width, el.offsetWidth, styleW);
+    const h = Math.max(rect.height, el.offsetHeight, styleH);
+
+    return w >= 150 && h >= 150;
+  }
+
+  function resolvePageElement(el) {
+    if (!el) return el;
+
+    // If el is an oversized wrapper row (e.g. 100% width container), unwrap to the true page element
+    const elRect = el.getBoundingClientRect();
+    if (el.children && el.children.length > 0) {
+      const candidateSelectors = ['.page', '[data-page-number]', '.canvasWrapper', 'canvas', '.pdf-page', '.sheet', 'img'];
+      for (const sel of candidateSelectors) {
+        const inner = el.querySelector(sel);
+        if (inner && inner !== el && isCandidatePage(inner)) {
+          const innerRect = inner.getBoundingClientRect();
+          if (innerRect.width >= 150 && innerRect.height >= 150) {
+            if (innerRect.width < elRect.width * 0.92) {
+              return inner;
+            }
+          }
+        }
+      }
+    }
+
+    return el;
+  }
+
+  function getVisibleClippingBounds(container) {
+    const isWindowScroll = !container || container === document.documentElement || container === document.body;
+
+    let clipTop = 0;
+    let clipLeft = 0;
+    let clipRight = window.innerWidth;
+    let clipBottom = window.innerHeight;
+
+    // Detect fixed / sticky header at the top of the window (toolbars, navigation bars)
+    const fixedHeaders = Array.from(document.querySelectorAll('header, nav, [role="banner"], [class*="header"], [class*="navbar"], [class*="toolbar"], [id*="header"], [id*="toolbar"], [id*="navbar"]'));
+    let maxHeaderBottom = 0;
+
+    for (const h of fixedHeaders) {
+      if (h.id === 'pdf-snapper-hud' || h.closest('#pdf-snapper-hud')) continue;
+      const style = window.getComputedStyle(h);
+      if (style.position === 'fixed' || style.position === 'sticky') {
+        const r = h.getBoundingClientRect();
+        if (r.top <= 5 && r.bottom > 15 && r.bottom < window.innerHeight * 0.45 && r.width > window.innerWidth * 0.3) {
+          if (r.bottom > maxHeaderBottom) {
+            maxHeaderBottom = r.bottom;
+          }
+        }
+      }
+    }
+
+    if (maxHeaderBottom > 0) {
+      clipTop = Math.max(clipTop, Math.ceil(maxHeaderBottom));
+    }
+
+    // Detect fixed footer at bottom of window
+    const fixedFooters = Array.from(document.querySelectorAll('footer, [role="contentinfo"], [class*="footer"], [id*="footer"]'));
+    let minFooterTop = window.innerHeight;
+
+    for (const f of fixedFooters) {
+      if (f.id === 'pdf-snapper-hud' || f.closest('#pdf-snapper-hud')) continue;
+      const style = window.getComputedStyle(f);
+      if (style.position === 'fixed' || style.position === 'sticky') {
+        const r = f.getBoundingClientRect();
+        if (r.bottom >= window.innerHeight - 5 && r.top < window.innerHeight - 15 && r.top > window.innerHeight * 0.6) {
+          if (r.top < minFooterTop) {
+            minFooterTop = r.top;
+          }
+        }
+      }
+    }
+
+    if (minFooterTop < window.innerHeight) {
+      clipBottom = Math.min(clipBottom, Math.floor(minFooterTop));
+    }
+
+    // If container is a specific scrollable element, clip to container client area
+    if (!isWindowScroll && container) {
+      const cRect = container.getBoundingClientRect();
+      clipTop = Math.max(clipTop, cRect.top + (container.clientTop || 0));
+      clipLeft = Math.max(clipLeft, cRect.left + (container.clientLeft || 0));
+      clipRight = Math.min(clipRight, cRect.left + (container.clientLeft || 0) + container.clientWidth);
+      clipBottom = Math.min(clipBottom, cRect.top + (container.clientTop || 0) + container.clientHeight);
+    }
+
+    return {
+      clipTop,
+      clipLeft,
+      clipRight,
+      clipBottom,
+      availWidth: Math.max(50, clipRight - clipLeft),
+      availHeight: Math.max(50, clipBottom - clipTop)
+    };
+  }
+
+  function findRepeatingPageSiblings(container) {
+    if (!container || !container.children) return [];
+    const children = Array.from(container.children).filter(c => isCandidatePage(c));
+    if (children.length >= 1) {
+      return children;
+    }
+    return [];
+  }
+
   function detectPdfStructure(customSelector) {
     if (customSelector) {
       const customEl = document.querySelector(customSelector);
       if (customEl) {
+        // If customEl is itself a page element, inspect parent container
+        if (isCandidatePage(customEl) && customEl.parentElement) {
+          const parent = customEl.parentElement;
+          let siblingPages = [];
+          for (const sel of PAGE_SELECTORS) {
+            const matches = Array.from(parent.querySelectorAll(sel)).filter(isCandidatePage);
+            if (matches.length >= 1) {
+              siblingPages = matches;
+              break;
+            }
+          }
+          if (siblingPages.length === 0) {
+            siblingPages = findRepeatingPageSiblings(parent);
+          }
+          if (siblingPages.length > 0) {
+            return {
+              detected: true,
+              container: findScrollableAncestor(customEl),
+              containerSelector: getUniqueSelector(parent),
+              pages: siblingPages,
+              mode: 'pages',
+              pageCount: siblingPages.length,
+              desc: `Custom Target (${siblingPages.length} pages found)`
+            };
+          }
+        }
+
         // Check if custom container has page elements
-        const pageSelectors = ['.page', '[data-page-number]', '.pdf-page', '.canvasWrapper', 'canvas'];
         let foundPages = [];
-        for (const sel of pageSelectors) {
-          const list = Array.from(customEl.querySelectorAll(sel));
-          if (list.length >= 2) {
+        for (const sel of PAGE_SELECTORS) {
+          const list = Array.from(customEl.querySelectorAll(sel)).filter(isCandidatePage);
+          if (list.length >= 1) {
             foundPages = list;
             break;
           }
         }
+        if (foundPages.length === 0) {
+          foundPages = findRepeatingPageSiblings(customEl);
+        }
+
         return {
           detected: true,
           container: customEl,
           containerSelector: customSelector,
           pages: foundPages,
-          mode: foundPages.length >= 2 ? 'pages' : 'continuous',
+          mode: foundPages.length >= 1 ? 'pages' : 'continuous',
           pageCount: foundPages.length,
-          desc: `Custom Target (${customEl.tagName.toLowerCase()})`
+          desc: foundPages.length >= 1
+            ? `Custom Target (${foundPages.length} pages)`
+            : `Custom Target Container (${customEl.tagName.toLowerCase()})`
         };
       }
     }
 
-    // Common PDF page selectors across major web viewers (PDF.js, Google Drive, DocSend, Scribd, etc.)
-    const pageSelectors = [
-      '.page[data-page-number]',
-      '.pdfViewer .page',
-      '.page',
-      '[data-page-number]',
-      '.pdf-page',
-      '.page-container',
-      '.page-view',
-      '.canvasWrapper',
-      'div[role="region"][aria-label*="page" i]',
-      '.ndfHFb-c4YZDc-Wrql6b' // Google Drive preview page class
-    ];
-
+    // Auto-detect pages across document
     let detectedPages = [];
-    for (const sel of pageSelectors) {
-      const matches = Array.from(document.querySelectorAll(sel)).filter(el => {
-        const rect = el.getBoundingClientRect();
-        return rect.width > 100 && (rect.height > 100 || el.offsetHeight > 100);
-      });
-      if (matches.length >= 2) {
+    for (const sel of PAGE_SELECTORS) {
+      const matches = Array.from(document.querySelectorAll(sel)).filter(isCandidatePage);
+      if (matches.length >= 1) {
         detectedPages = matches;
         break;
       }
     }
 
-    // If no distinct page elements, check for standalone large canvas elements
-    if (detectedPages.length < 2) {
+    // If no distinct page elements from selectors, check for standalone large canvases
+    if (detectedPages.length === 0) {
       const canvases = Array.from(document.querySelectorAll('canvas')).filter(c => {
-        return c.width > 300 && c.height > 300;
+        if (c.closest('#sidebarContainer, #thumbnailView, .thumbnail, nav')) return false;
+        return (c.width >= 250 || c.clientWidth >= 250) && (c.height >= 250 || c.clientHeight >= 250);
       });
-      if (canvases.length >= 2) {
+      if (canvases.length >= 1) {
         detectedPages = canvases;
       }
     }
@@ -137,7 +312,7 @@
     let container = null;
     let mode = 'continuous';
 
-    if (detectedPages.length >= 2) {
+    if (detectedPages.length >= 1) {
       container = findScrollableAncestor(detectedPages[0]);
       mode = 'pages';
     } else {
@@ -158,20 +333,30 @@
       }
 
       container = bestContainer || document.scrollingElement || document.documentElement;
-      mode = 'continuous';
+
+      // Check if container has repeating child elements that look like pages
+      if (container) {
+        const siblings = findRepeatingPageSiblings(container);
+        if (siblings.length >= 1) {
+          detectedPages = siblings;
+          mode = 'pages';
+        } else {
+          mode = 'continuous';
+        }
+      }
     }
 
     const containerSelector = container ? getUniqueSelector(container) : 'window';
 
     return {
-      detected: detectedPages.length >= 2 || (container && container !== document.documentElement),
+      detected: detectedPages.length >= 1 || (container && container !== document.documentElement),
       container: container,
       containerSelector: containerSelector,
       pages: detectedPages,
       mode: mode,
       pageCount: detectedPages.length,
-      desc: detectedPages.length >= 2
-        ? `${detectedPages.length} PDF pages detected`
+      desc: detectedPages.length >= 1
+        ? `${detectedPages.length} PDF page${detectedPages.length === 1 ? '' : 's'} detected`
         : (container === document.documentElement ? 'Full Window Viewport' : 'Scrollable Container')
     };
   }
@@ -320,6 +505,36 @@
     });
   }
 
+  async function hideHUDForCapture() {
+    if (!hudElement) return;
+    hudElement.classList.add('hidden-for-capture');
+    hudElement.style.setProperty('display', 'none', 'important');
+    hudElement.style.setProperty('visibility', 'hidden', 'important');
+    hudElement.style.setProperty('opacity', '0', 'important');
+    hudElement.style.setProperty('transition', 'none', 'important');
+
+    // Force layout / reflow
+    void hudElement.offsetHeight;
+
+    // Ensure double requestAnimationFrame + safety buffer so the compositor commits a clean frame
+    await new Promise(resolve => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setTimeout(resolve, 60);
+        });
+      });
+    });
+  }
+
+  function restoreHUDAfterCapture() {
+    if (!hudElement) return;
+    hudElement.style.removeProperty('display');
+    hudElement.style.removeProperty('visibility');
+    hudElement.style.removeProperty('opacity');
+    hudElement.style.removeProperty('transition');
+    hudElement.classList.remove('hidden-for-capture');
+  }
+
   // -------------------------------------------------------------
   // 3. CAPTURE EXECUTION ENGINE
   // -------------------------------------------------------------
@@ -335,14 +550,11 @@
   }
 
   // Wait for canvas / lazy loaded images inside target element to finish rendering
-  async function waitForPageContentReady(targetEl, maxWaitMs = 1200) {
+  async function waitForPageContentReady(targetEl, maxWaitMs = 1400) {
     const startTime = Date.now();
 
-    // Check if there are canvases still in loading state
-    const canvases = Array.from(targetEl.querySelectorAll('canvas'));
+    // Check if there are canvases or images still in loading state
     const images = Array.from(targetEl.querySelectorAll('img'));
-
-    // Wait until at least all images have loaded
     for (const img of images) {
       if (!img.complete && Date.now() - startTime < maxWaitMs) {
         await new Promise(r => {
@@ -353,8 +565,16 @@
       }
     }
 
-    // Give browser a short tick for layout and canvas paint
-    await sleep(Math.min(250, maxWaitMs));
+    // Wait for PDF.js page loading status (data-loaded="true" / class "loading")
+    while (Date.now() - startTime < maxWaitMs) {
+      const isPdfLoading = targetEl.classList.contains('loading') ||
+        (targetEl.hasAttribute('data-loaded') && targetEl.getAttribute('data-loaded') === 'false');
+      if (!isPdfLoading) break;
+      await sleep(50);
+    }
+
+    // Give browser a short tick for layout, canvas render, and compositor paint
+    await sleep(Math.min(200, maxWaitMs));
   }
 
   async function startCapture(options = {}) {
@@ -379,7 +599,7 @@
     captureState.container = container;
     captureState.elements = elements;
     captureState.mode = mode;
-    captureState.cropMode = options.cropMode || 'container'; // 'container' | 'page' | 'full'
+    captureState.cropMode = options.cropMode || 'page'; // 'page' | 'container' | 'full'
     captureState.renderDelay = options.renderDelay || 900;
     captureState.scrollStepPercent = options.scrollStepPercent || 90;
     captureState.currentIndex = 0;
@@ -433,9 +653,204 @@
     }
   }
 
+  async function captureSinglePageElement(pageEl, pageIndex, totalPages) {
+    const { container, renderDelay, cropMode } = captureState;
+    const isWindowScroll = !container || container === document.documentElement || container === document.body;
+
+    // Resolve true visual page element (unwrap row wrapper if needed)
+    const targetEl = (cropMode === 'page') ? resolvePageElement(pageEl) : pageEl;
+
+    // Scroll element cleanly into view
+    if (isWindowScroll) {
+      const rect = targetEl.getBoundingClientRect();
+      window.scrollTo({ top: window.pageYOffset + rect.top, behavior: 'instant' });
+    } else {
+      targetEl.scrollIntoView({ block: 'start', behavior: 'instant' });
+    }
+
+    // Wait for canvas / images / PDF.js to finish rendering
+    await sleep(renderDelay);
+    await waitForPageContentReady(targetEl);
+
+    // Get current unobstructed visible clipping bounds and page element dimensions
+    const bounds = getVisibleClippingBounds(container);
+    let pageRect = targetEl.getBoundingClientRect();
+
+    const pageWidth = Math.max(50, Math.round(pageRect.width));
+    const pageHeight = Math.max(50, Math.round(pageRect.height));
+
+    // Case: Crop to PDF Container
+    if (cropMode === 'container' && container && !isWindowScroll) {
+      const cRect = container.getBoundingClientRect();
+      await hideHUDForCapture();
+      try {
+        return await chrome.runtime.sendMessage({
+          action: 'CAPTURE_PAGE',
+          sessionId: captureState.sessionId,
+          pageIndex: pageIndex,
+          totalPages: totalPages,
+          cropRect: {
+            x: Math.max(0, cRect.left),
+            y: Math.max(0, cRect.top),
+            width: cRect.width,
+            height: cRect.height,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight
+          },
+          dpr: window.devicePixelRatio || 1
+        });
+      } finally {
+        restoreHUDAfterCapture();
+      }
+    }
+
+    // Case: Capture Full Viewport
+    if (cropMode === 'full') {
+      await hideHUDForCapture();
+      try {
+        return await chrome.runtime.sendMessage({
+          action: 'CAPTURE_PAGE',
+          sessionId: captureState.sessionId,
+          pageIndex: pageIndex,
+          totalPages: totalPages,
+          cropRect: null,
+          dpr: window.devicePixelRatio || 1
+        });
+      } finally {
+        restoreHUDAfterCapture();
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Page Crop Mode: Snap cleanly to the exact page boundaries
+    // -------------------------------------------------------------
+    const availH = bounds.availHeight;
+
+    // Adjust horizontal scroll if page is clipped horizontally
+    if (pageRect.left < bounds.clipLeft || pageRect.right > bounds.clipRight) {
+      const hDelta = pageRect.left - bounds.clipLeft;
+      if (isWindowScroll) {
+        window.scrollBy({ left: hDelta, behavior: 'instant' });
+      } else {
+        container.scrollLeft += hDelta;
+      }
+      pageRect = targetEl.getBoundingClientRect();
+    }
+
+    // SUB-CASE 1: Page fits entirely within unobstructed visible height
+    if (pageHeight <= availH + 2) {
+      // Position top of page cleanly at bounds.clipTop (avoiding fixed headers)
+      const vDelta = pageRect.top - bounds.clipTop;
+      if (Math.abs(vDelta) > 1) {
+        if (isWindowScroll) {
+          window.scrollBy({ top: vDelta, behavior: 'instant' });
+        } else {
+          container.scrollTop += vDelta;
+        }
+        await sleep(50);
+        pageRect = targetEl.getBoundingClientRect();
+      }
+
+      await hideHUDForCapture();
+      try {
+        return await chrome.runtime.sendMessage({
+          action: 'CAPTURE_PAGE',
+          sessionId: captureState.sessionId,
+          pageIndex: pageIndex,
+          totalPages: totalPages,
+          cropRect: {
+            x: Math.max(0, pageRect.left),
+            y: Math.max(0, pageRect.top),
+            width: pageRect.width,
+            height: pageRect.height,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight
+          },
+          dpr: window.devicePixelRatio || 1
+        });
+      } finally {
+        restoreHUDAfterCapture();
+      }
+    }
+
+    // SUB-CASE 2: Page is TALLER than available visible height
+    // Multi-Segment Smart Stitching to capture 100% of the page without cutting
+    const maxSliceH = Math.max(100, Math.floor(availH - 6));
+    const totalSlices = Math.ceil(pageHeight / maxSliceH);
+
+    let capturedY = 0;
+    let lastRes = null;
+
+    for (let sliceIdx = 0; sliceIdx < totalSlices; sliceIdx++) {
+      if (captureState.isAborted) break;
+
+      const remainingH = pageHeight - capturedY;
+      const sliceH = Math.min(maxSliceH, remainingH);
+
+      // Scroll so that the region [capturedY, capturedY + sliceH] is visible
+      const currentRect = targetEl.getBoundingClientRect();
+      const desiredTop = bounds.clipTop - capturedY;
+      const scrollNeeded = currentRect.top - desiredTop;
+
+      if (Math.abs(scrollNeeded) > 1) {
+        if (isWindowScroll) {
+          window.scrollBy({ top: scrollNeeded, behavior: 'instant' });
+        } else {
+          container.scrollTop += scrollNeeded;
+        }
+        await sleep(60);
+      }
+
+      // Re-read rect after scroll
+      const activeRect = targetEl.getBoundingClientRect();
+      let sliceViewportY = activeRect.top + capturedY;
+      let actualSliceH = sliceH;
+
+      // Handle container boundary clamping (e.g. at container bottom)
+      if (sliceViewportY + actualSliceH > bounds.clipBottom) {
+        actualSliceH = Math.max(10, bounds.clipBottom - sliceViewportY);
+      }
+
+      const cropRect = {
+        x: Math.max(0, activeRect.left),
+        y: Math.max(0, sliceViewportY),
+        width: activeRect.width,
+        height: actualSliceH,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight
+      };
+
+      await hideHUDForCapture();
+      try {
+        lastRes = await chrome.runtime.sendMessage({
+          action: 'CAPTURE_PAGE',
+          sessionId: captureState.sessionId,
+          pageIndex: pageIndex,
+          totalPages: totalPages,
+          sliceIndex: sliceIdx,
+          totalSlices: totalSlices,
+          destY: capturedY,
+          fullWidth: pageWidth,
+          fullHeight: pageHeight,
+          cropRect: cropRect,
+          dpr: window.devicePixelRatio || 1
+        });
+      } finally {
+        restoreHUDAfterCapture();
+      }
+
+      capturedY += actualSliceH;
+      if (capturedY >= pageHeight) {
+        break;
+      }
+      await sleep(80);
+    }
+
+    return lastRes;
+  }
+
   async function capturePageByPageLoop() {
-    const { elements, container, renderDelay, cropMode } = captureState;
-    const isWindowScroll = container === document.documentElement || container === document.body;
+    let { elements, renderDelay } = captureState;
 
     for (let i = 0; i < elements.length; i++) {
       if (captureState.isAborted) break;
@@ -443,53 +858,7 @@
       if (captureState.isAborted) break;
 
       const pageEl = elements[i];
-
-      // Scroll element cleanly into view
-      if (isWindowScroll) {
-        const rect = pageEl.getBoundingClientRect();
-        const targetY = window.pageYOffset + rect.top;
-        window.scrollTo({ top: targetY, behavior: 'instant' });
-      } else {
-        // Scroll inside container
-        pageEl.scrollIntoView({ block: 'start', behavior: 'instant' });
-      }
-
-      // Wait for lazy render / canvas render
-      await sleep(renderDelay);
-      await waitForPageContentReady(pageEl);
-
-      // Hide HUD during tab screenshot
-      if (hudElement) hudElement.classList.add('hidden-for-capture');
-      await sleep(60); // Brief paint delay for HUD hide
-
-      // Compute bounding crop rectangle in CSS pixels relative to viewport
-      let targetForCrop = (cropMode === 'page' ? pageEl : (cropMode === 'container' ? container : null));
-      let cropRect = null;
-
-      if (cropMode !== 'full' && targetForCrop) {
-        const r = targetForCrop.getBoundingClientRect();
-        cropRect = {
-          x: Math.max(0, r.left),
-          y: Math.max(0, r.top),
-          width: r.width,
-          height: r.height,
-          viewportWidth: window.innerWidth,
-          viewportHeight: window.innerHeight
-        };
-      }
-
-      // Send capture request to background
-      const captureRes = await chrome.runtime.sendMessage({
-        action: 'CAPTURE_PAGE',
-        sessionId: captureState.sessionId,
-        pageIndex: i,
-        totalPages: elements.length,
-        cropRect: cropRect,
-        dpr: window.devicePixelRatio || 1
-      });
-
-      // Restore HUD
-      if (hudElement) hudElement.classList.remove('hidden-for-capture');
+      const captureRes = await captureSinglePageElement(pageEl, i, elements.length);
 
       captureState.currentIndex = i + 1;
 
@@ -503,14 +872,28 @@
         );
       }
 
-      // Grace period before next page
+      // Check if scrolling revealed new lazy-loaded page elements (dynamic virtual DOM)
+      if (i === elements.length - 1) {
+        const recheck = detectPdfStructure();
+        if (recheck.pages && recheck.pages.length > elements.length) {
+          const newPages = recheck.pages.filter(p => !elements.includes(p));
+          if (newPages.length > 0) {
+            elements.push(...newPages);
+            captureState.elements = elements;
+            captureState.totalItems = elements.length;
+            updateHUD(captureState.currentIndex, elements.length);
+          }
+        }
+      }
+
+      // Brief pause between pages
       await sleep(150);
     }
   }
 
   async function captureContinuousLoop() {
     const { container, renderDelay, scrollStepPercent, cropMode } = captureState;
-    const isWindowScroll = container === document.documentElement || container === document.body;
+    const isWindowScroll = !container || container === document.documentElement || container === document.body;
 
     const getScrollTop = () => isWindowScroll ? window.pageYOffset : container.scrollTop;
     const setScrollTop = (val) => {
@@ -527,7 +910,8 @@
     setScrollTop(0);
     await sleep(250);
 
-    const clientHeight = getClientHeight();
+    const bounds = getVisibleClippingBounds(container);
+    const clientHeight = Math.min(bounds.availHeight, getClientHeight());
     const scrollStep = Math.max(100, Math.floor(clientHeight * (scrollStepPercent / 100)));
     const totalEstPages = Math.max(1, Math.ceil(getScrollHeight() / scrollStep));
 
@@ -552,33 +936,35 @@
       // Render wait
       await sleep(renderDelay);
 
-      // Hide HUD during capture
-      if (hudElement) hudElement.classList.add('hidden-for-capture');
-      await sleep(60);
-
       let cropRect = null;
-      if (cropMode === 'container' && container && !isWindowScroll) {
-        const r = container.getBoundingClientRect();
+      if (cropMode !== 'full') {
+        const currentBounds = getVisibleClippingBounds(container);
         cropRect = {
-          x: Math.max(0, r.left),
-          y: Math.max(0, r.top),
-          width: r.width,
-          height: r.height,
+          x: currentBounds.clipLeft,
+          y: currentBounds.clipTop,
+          width: currentBounds.availWidth,
+          height: currentBounds.availHeight,
           viewportWidth: window.innerWidth,
           viewportHeight: window.innerHeight
         };
       }
 
-      const captureRes = await chrome.runtime.sendMessage({
-        action: 'CAPTURE_PAGE',
-        sessionId: captureState.sessionId,
-        pageIndex: pageIdx,
-        totalPages: totalEstPages,
-        cropRect: cropRect,
-        dpr: window.devicePixelRatio || 1
-      });
+      // Hide HUD completely and wait for compositor frame commit
+      await hideHUDForCapture();
 
-      if (hudElement) hudElement.classList.remove('hidden-for-capture');
+      let captureRes = null;
+      try {
+        captureRes = await chrome.runtime.sendMessage({
+          action: 'CAPTURE_PAGE',
+          sessionId: captureState.sessionId,
+          pageIndex: pageIdx,
+          totalPages: totalEstPages,
+          cropRect: cropRect,
+          dpr: window.devicePixelRatio || 1
+        });
+      } finally {
+        restoreHUDAfterCapture();
+      }
 
       pageIdx++;
       captureState.currentIndex = pageIdx;

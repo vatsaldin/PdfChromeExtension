@@ -34,6 +34,9 @@ async function blobToDataUrl(blob) {
   return `data:${blob.type || 'image/jpeg'};base64,${btoa(binary)}`;
 }
 
+// Map to hold in-progress multi-slice stitching: sessionId_pageIndex -> { canvas, ctx, targetW, targetH, scaleX, scaleY, slicesCount }
+const sliceBuilders = new Map();
+
 // Process and crop captured tab image
 async function processAndCrop(dataUrl, cropRect, dpr) {
   const resp = await fetch(dataUrl);
@@ -46,11 +49,17 @@ async function processAndCrop(dataUrl, cropRect, dpr) {
   let sh = bitmap.height;
 
   if (cropRect && cropRect.width > 20 && cropRect.height > 20) {
-    const scale = dpr || (bitmap.width / (cropRect.viewportWidth || (bitmap.width / (dpr || 1))));
-    sx = Math.max(0, Math.floor(cropRect.x * scale));
-    sy = Math.max(0, Math.floor(cropRect.y * scale));
-    sw = Math.min(bitmap.width - sx, Math.ceil(cropRect.width * scale));
-    sh = Math.min(bitmap.height - sy, Math.ceil(cropRect.height * scale));
+    const scaleX = (cropRect.viewportWidth && cropRect.viewportWidth > 0)
+      ? (bitmap.width / cropRect.viewportWidth)
+      : (dpr || 1);
+    const scaleY = (cropRect.viewportHeight && cropRect.viewportHeight > 0)
+      ? (bitmap.height / cropRect.viewportHeight)
+      : (dpr || 1);
+
+    sx = Math.max(0, Math.floor(cropRect.x * scaleX));
+    sy = Math.max(0, Math.floor(cropRect.y * scaleY));
+    sw = Math.min(bitmap.width - sx, Math.round(cropRect.width * scaleX));
+    sh = Math.min(bitmap.height - sy, Math.round(cropRect.height * scaleY));
 
     // Guard against out-of-bounds or invalid dimensions
     if (sw <= 0 || sh <= 0) {
@@ -120,7 +129,98 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Capture visible tab
         const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
 
-        // Crop according to target container bounds
+        // Check if this is part of a multi-slice capture for tall pages
+        if (message.totalSlices && message.totalSlices > 1) {
+          const resp = await fetch(dataUrl);
+          const blob = await resp.blob();
+          const bitmap = await createImageBitmap(blob);
+
+          const cropRect = message.cropRect;
+          const scaleX = (cropRect && cropRect.viewportWidth > 0)
+            ? (bitmap.width / cropRect.viewportWidth)
+            : (message.dpr || 1);
+          const scaleY = (cropRect && cropRect.viewportHeight > 0)
+            ? (bitmap.height / cropRect.viewportHeight)
+            : (message.dpr || 1);
+
+          const sx = Math.max(0, Math.floor((cropRect ? cropRect.x : 0) * scaleX));
+          const sy = Math.max(0, Math.floor((cropRect ? cropRect.y : 0) * scaleY));
+          const sw = Math.min(bitmap.width - sx, Math.round((cropRect ? cropRect.width : bitmap.width) * scaleX));
+          const sh = Math.min(bitmap.height - sy, Math.round((cropRect ? cropRect.height : bitmap.height) * scaleY));
+
+          const builderKey = `${message.sessionId}_${message.pageIndex}`;
+          let builder = sliceBuilders.get(builderKey);
+
+          if (!builder || message.sliceIndex === 0) {
+            const targetW = Math.max(1, Math.round((message.fullWidth || (cropRect ? cropRect.width : sw)) * scaleX));
+            const targetH = Math.max(1, Math.round((message.fullHeight || (cropRect ? cropRect.height : sh)) * scaleY));
+            const canvas = new OffscreenCanvas(targetW, targetH);
+            const ctx = canvas.getContext('2d');
+            builder = {
+              canvas,
+              ctx,
+              targetW,
+              targetH,
+              scaleX,
+              scaleY,
+              slicesCount: 0
+            };
+            sliceBuilders.set(builderKey, builder);
+          }
+
+          const dy = Math.max(0, Math.round((message.destY || 0) * builder.scaleY));
+          const dw = Math.min(builder.targetW, sw);
+          const dh = Math.min(builder.targetH - dy, sh);
+
+          if (sw > 0 && sh > 0 && dw > 0 && dh > 0) {
+            builder.ctx.drawImage(bitmap, sx, sy, dw, dh, 0, dy, dw, dh);
+          }
+          builder.slicesCount++;
+
+          // If this is the final slice, complete and persist the composite page
+          if (message.sliceIndex === message.totalSlices - 1) {
+            sliceBuilders.delete(builderKey);
+
+            const croppedBlob = await builder.canvas.convertToBlob({ type: 'image/png' });
+            const thumbW = 180;
+            const thumbH = Math.max(1, Math.round(builder.targetH * (thumbW / builder.targetW)));
+            const thumbCanvas = new OffscreenCanvas(thumbW, thumbH);
+            const tctx = thumbCanvas.getContext('2d');
+            tctx.drawImage(builder.canvas, 0, 0, builder.targetW, builder.targetH, 0, 0, thumbW, thumbH);
+            const thumbBlob = await thumbCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.75 });
+            const thumbnailDataUrl = await blobToDataUrl(thumbBlob);
+
+            await PdfDB.savePage({
+              sessionId: message.sessionId,
+              pageIndex: message.pageIndex,
+              imageBlob: croppedBlob,
+              thumbnailDataUrl,
+              width: builder.targetW,
+              height: builder.targetH,
+              rotation: 0
+            });
+
+            sendResponse({
+              success: true,
+              pageIndex: message.pageIndex,
+              thumbnailDataUrl,
+              width: builder.targetW,
+              height: builder.targetH
+            });
+            return;
+          } else {
+            // Intermediate slice captured
+            sendResponse({
+              success: true,
+              pageIndex: message.pageIndex,
+              sliceIndex: message.sliceIndex,
+              isPartial: true
+            });
+            return;
+          }
+        }
+
+        // Standard single-shot capture
         const processed = await processAndCrop(dataUrl, message.cropRect, message.dpr || 1);
 
         // Store into IndexedDB
@@ -151,6 +251,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             status: 'completed',
             pageCount: totalPages
           });
+          // Clean up any stale slice builders for this session
+          for (const key of sliceBuilders.keys()) {
+            if (key.startsWith(`${sessionId}_`)) {
+              sliceBuilders.delete(key);
+            }
+          }
         }
 
         if (sender.tab) {
@@ -169,6 +275,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const { sessionId } = message;
         if (sessionId) {
           await PdfDB.updateSession(sessionId, { status: 'cancelled' });
+          for (const key of sliceBuilders.keys()) {
+            if (key.startsWith(`${sessionId}_`)) {
+              sliceBuilders.delete(key);
+            }
+          }
         }
         if (sender.tab) {
           activeCaptures.delete(sender.tab.id);
