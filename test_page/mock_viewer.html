@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mock Online PDF Viewer - Demonstration Document</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      background-color: #374151;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    /* Web Viewer Header Toolbar */
+    .viewer-navbar {
+      height: 48px;
+      background-color: #1f2937;
+      color: #f9fafb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      border-bottom: 1px solid #4b5563;
+      flex-shrink: 0;
+    }
+    .doc-name {
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .nav-tools {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: #9ca3af;
+    }
+    .btn-mock {
+      background: #374151;
+      color: #e5e7eb;
+      border: 1px solid #4b5563;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    /* Scrollable Container simulating PDF.js or Doc Viewer */
+    #viewerContainer {
+      flex: 1;
+      overflow-y: scroll;
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 30px;
+      background-color: #4b5563;
+    }
+    /* Discrete Page Elements */
+    .page {
+      width: 720px;
+      min-height: 960px;
+      background-color: #ffffff;
+      color: #111827;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      padding: 60px 50px;
+      position: relative;
+      border-radius: 2px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .page-header {
+      border-bottom: 2px solid #4f46e5;
+      padding-bottom: 12px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .page-header h2 {
+      font-size: 20px;
+      color: #1e1b4b;
+      font-weight: 800;
+    }
+    .page-header span {
+      font-size: 11px;
+      color: #6b7280;
+      font-weight: 600;
+    }
+    .page-content {
+      flex: 1;
+      line-height: 1.6;
+      font-size: 13.5px;
+      color: #374151;
+    }
+    .page-content h3 {
+      font-size: 15px;
+      color: #1f2937;
+      margin: 16px 0 8px;
+    }
+    .page-content p {
+      margin-bottom: 12px;
+    }
+    .sample-box {
+      background-color: #f3f4f6;
+      border-left: 4px solid #6366f1;
+      padding: 14px 16px;
+      margin: 16px 0;
+      border-radius: 0 6px 6px 0;
+      font-size: 12.5px;
+      color: #1f2937;
+    }
+    .sample-canvas {
+      width: 100%;
+      height: 180px;
+      background: #faf5ff;
+      border: 1px dashed #c084fc;
+      border-radius: 8px;
+      margin: 16px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      color: #7e22ce;
+    }
+    .page-footer {
+      border-top: 1px solid #e5e7eb;
+      padding-top: 12px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #9ca3af;
+    }
+    .page-number-label {
+      font-weight: 700;
+      color: #4b5563;
+    }
+  </style>
+</head>
+<body>
+  <div class="viewer-navbar">
+    <div class="doc-name">
+      <span>📄</span> Research_Report_Modern_Web_Systems.pdf
+    </div>
+    <div class="nav-tools">
+      <span>Protected Document (Download Disabled)</span>
+      <button class="btn-mock">Zoom: 100%</button>
+      <button class="btn-mock">Page: 1 / 5</button>
+    </div>
+  </div>
+
+  <div id="viewerContainer" class="pdfViewer">
+    <!-- Page 1 -->
+    <div class="page" data-page-number="1">
+      <div class="page-header">
+        <h2>Executive Summary & System Architecture</h2>
+        <span>SECTION 01</span>
+      </div>
+      <div class="page-content">
+        <p>This report documents high-performance client-side offline document archiving and screenshot rasterization. Distributed web applications frequently deliver read-only digital publications through browser-based canvas rendering pipelines.</p>
+        <div class="sample-box">
+          <b>Key Metric:</b> Over 74% of corporate learning systems and secure distribution portals utilize protected viewport frames that prevent native file saving.
+        </div>
+        <h3>Core Architectural Principles</h3>
+        <p>By leveraging Chrome Manifest V3 APIs alongside isolated IndexedDB storage containers, extensions can automate page-by-page traversal, viewport stabilization, and device-pixel-ratio faithful raster capture.</p>
+        <div class="sample-canvas">
+          [ Figure 1.1: Automated Viewport Scrolling Pipeline ]
+        </div>
+        <p>Dynamic bounds detection ensures that peripheral interface elements, including navigation headers and zoom controllers, are systematically eliminated from final multi-page archives.</p>
+      </div>
+      <div class="page-footer">
+        <span>Confidential Research Document</span>
+        <span class="page-number-label">Page 1 of 5</span>
+      </div>
+    </div>
+
+    <!-- Page 2 -->
+    <div class="page" data-page-number="2">
+      <div class="page-header">
+        <h2>High-Precision DOM Page Detection</h2>
+        <span>SECTION 02</span>
+      </div>
+      <div class="page-content">
+        <p>Modern browser viewers utilize disparate structural models. Mozilla PDF.js generates distinct div wrappers decorated with data attributes, whereas alternative viewers utilize canvas stacks.</p>
+        <h3>Algorithmic Discovery Hierarchy</h3>
+        <ul style="margin-left: 20px; margin-bottom: 14px;">
+          <li><b>Selector Heuristics:</b> Inspection of [data-page-number], .page, and .pdf-page classes.</li>
+          <li><b>Container Resolution:</b> Ascending DOM tree exploration to identify scrollable ancestors.</li>
+          <li><b>Fall-Through Mode:</b> Continuous client-height stepped scrolling for arbitrary document containers.</li>
+        </ul>
+        <div class="sample-box">
+          <b>Render Timing:</b> Adequate post-scroll latency (800ms - 1500ms) is essential to accommodate tile-based lazy rasterization prior to frame acquisition.
+        </div>
+        <p>The capture coordinator monitors image completion states and canvas dimensions before signaling the background service worker.</p>
+      </div>
+      <div class="page-footer">
+        <span>Confidential Research Document</span>
+        <span class="page-number-label">Page 2 of 5</span>
+      </div>
+    </div>
+
+    <!-- Page 3 -->
+    <div class="page" data-page-number="3">
+      <div class="page-header">
+        <h2>Offline Blob Serialization & Storage</h2>
+        <span>SECTION 03</span>
+      </div>
+      <div class="page-content">
+        <p>Direct base64 transmission of multi-page documents introduces severe IPC overhead in Chromium. The implementation stores raw PNG Blobs directly within an IndexedDB object store.</p>
+        <h3>Storage Benchmarks</h3>
+        <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 12.5px;">
+          <thead>
+            <tr style="background: #f3f4f6; text-align: left;">
+              <th style="padding: 8px; border: 1px solid #e5e7eb;">Format</th>
+              <th style="padding: 8px; border: 1px solid #e5e7eb;">Storage Footprint</th>
+              <th style="padding: 8px; border: 1px solid #e5e7eb;">Latency (50 pages)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">Base64 JSON String</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">~133% of Raw</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">4.82s</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">IndexedDB Native Blob</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">100% (Zero Overhead)</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">0.64s</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="sample-box">
+          <b>Conclusion:</b> IndexedDB persistence guarantees zero memory exhaustion even on large multi-volume captures.
+        </div>
+      </div>
+      <div class="page-footer">
+        <span>Confidential Research Document</span>
+        <span class="page-number-label">Page 3 of 5</span>
+      </div>
+    </div>
+
+    <!-- Page 4 -->
+    <div class="page" data-page-number="4">
+      <div class="page-header">
+        <h2>Reconstitution: Client-Side PDF Generation</h2>
+        <span>SECTION 04</span>
+      </div>
+      <div class="page-content">
+        <p>Captured visual raster pages are reconstituted into standard offline PDF files utilizing client-side jsPDF packaging. Each page maintains its original pixel proportions and DPI fidelity.</p>
+        <div class="sample-canvas">
+          [ Figure 4.1: Aspect-Ratio Preserving Vector Assembly ]
+        </div>
+        <p>Users are empowered to reorder, rotate by 90-degree increments, exclude blank end-pages, or download the full sequence as an organized ZIP archive.</p>
+      </div>
+      <div class="page-footer">
+        <span>Confidential Research Document</span>
+        <span class="page-number-label">Page 4 of 5</span>
+      </div>
+    </div>
+
+    <!-- Page 5 -->
+    <div class="page" data-page-number="5">
+      <div class="page-header">
+        <h2>Conclusion & Verification Checklist</h2>
+        <span>SECTION 05</span>
+      </div>
+      <div class="page-content">
+        <p>The PDF Snapper Chrome extension provides an autonomous, offline-first solution for saving read-only documents without requiring direct file downloads.</p>
+        <div class="sample-box">
+          <b>Operational Status:</b> All 5 pages rendered and ready for automated capture testing.
+        </div>
+        <p>Click the <b>PDF Snapper extension icon</b> in Chrome toolbar and select <b>"Start Auto-Capture"</b> to verify live capture on this page.</p>
+      </div>
+      <div class="page-footer">
+        <span>Confidential Research Document</span>
+        <span class="page-number-label">Page 5 of 5</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Snapper - Offline Document Gallery</title>
+  <link rel="stylesheet" href="gallery.css">
+  <link rel="icon" type="image/png" href="../icons/icon32.png">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar: Saved Documents Library -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="app-brand">
+          <img src="../icons/icon32.png" alt="Logo" class="brand-logo">
+          <div class="brand-info">
+            <h2>PDF Snapper</h2>
+            <span>Offline Library</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-actions">
+        <button id="btn-refresh-library" class="btn-sidebar" title="Refresh Documents">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          <span>Refresh List</span>
+        </button>
+      </div>
+
+      <div class="session-list" id="session-list">
+        <!-- Sessions rendered dynamically -->
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="storage-indicator" id="sidebar-storage">
+          <span>Storage: Calculating...</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Navigation & Action Bar -->
+      <header class="top-nav">
+        <div class="doc-header-info">
+          <button id="btn-toggle-sidebar" class="icon-toggle-btn" title="Toggle Library Sidebar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
+          <div class="title-edit-wrap">
+            <input type="text" id="doc-title-input" class="doc-title-input" value="Loading Document..." placeholder="Document Title">
+            <span class="save-status" id="title-save-status">Saved</span>
+          </div>
+          <div class="doc-meta-badge" id="doc-meta-badge">
+            <span id="meta-page-count">0 Pages</span>
+            <span class="meta-dot">•</span>
+            <span id="meta-date">Just now</span>
+          </div>
+        </div>
+
+        <div class="doc-actions">
+          <!-- Export as PDF Button -->
+          <button id="btn-export-pdf" class="btn-action btn-pdf" title="Combine all captured pages into a multi-page PDF">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            <span>Export to PDF</span>
+          </button>
+
+          <!-- Export as ZIP Button -->
+          <button id="btn-export-zip" class="btn-action btn-zip" title="Download all high-res screenshots as a ZIP file">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+            <span>Download ZIP</span>
+          </button>
+
+          <!-- Delete Session Button -->
+          <button id="btn-delete-session" class="btn-action btn-danger" title="Delete this captured document">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Banner / Filter Bar -->
+      <div class="toolbar-sub">
+        <div class="filter-controls">
+          <span class="toolbar-label">View:</span>
+          <button class="filter-pill active" id="filter-all">All Pages (<span id="count-all">0</span>)</button>
+          <button class="filter-pill" id="filter-included">Included for Export (<span id="count-included">0</span>)</button>
+          <button class="filter-pill" id="filter-excluded">Excluded (<span id="count-excluded">0</span>)</button>
+        </div>
+        <div class="grid-controls">
+          <label class="grid-zoom-label">Card Size:</label>
+          <input type="range" id="grid-zoom" min="160" max="360" value="240" class="zoom-slider">
+        </div>
+      </div>
+
+      <!-- Main Pages Grid -->
+      <div class="pages-scroll-area">
+        <div class="pages-grid" id="pages-grid">
+          <!-- Dynamic Page Cards -->
+        </div>
+
+        <div class="empty-state" id="empty-state" style="display: none;">
+          <div class="empty-icon">📷</div>
+          <h3>No Pages Captured Yet</h3>
+          <p>Navigate to any web page or PDF viewer in Chrome and click "Start Auto-Capture" from the extension popup.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Fullscreen Image Lightbox Modal -->
+  <div class="lightbox-modal" id="lightbox-modal" style="display: none;">
+    <div class="lightbox-backdrop" id="lightbox-backdrop"></div>
+    <div class="lightbox-container">
+      <div class="lightbox-header">
+        <div class="lightbox-title" id="lightbox-title">Page 1</div>
+        <div class="lightbox-actions">
+          <button id="btn-lightbox-rotate" class="lightbox-btn" title="Rotate 90° Clockwise">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+            <span>Rotate</span>
+          </button>
+          <button id="btn-lightbox-download" class="lightbox-btn" title="Download this page image">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>Save PNG</span>
+          </button>
+          <button id="btn-lightbox-close" class="lightbox-close-btn" title="Close">✕</button>
+        </div>
+      </div>
+      <div class="lightbox-body">
+        <button id="btn-lightbox-prev" class="lightbox-nav-btn prev" title="Previous Page">‹</button>
+        <div class="lightbox-img-wrap">
+          <img id="lightbox-img" src="" alt="Full Page View">
+        </div>
+        <button id="btn-lightbox-next" class="lightbox-nav-btn next" title="Next Page">›</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Exporting Progress Modal -->
+  <div class="progress-modal" id="progress-modal" style="display: none;">
+    <div class="progress-box">
+      <div class="progress-spinner"></div>
+      <h3 id="progress-modal-title">Generating Offline PDF...</h3>
+      <p id="progress-modal-desc">Assembling pages with native aspect ratio...</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill" id="progress-modal-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Local Bundled Libraries -->
+  <script src="../libs/jspdf.umd.min.js"></script>
+  <script src="../libs/jszip.min.js"></script>
+  <script src="db.js"></script>
+  <script src="gallery.js"></script>
+</body>
+</html>

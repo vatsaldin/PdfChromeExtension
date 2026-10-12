@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Snapper - Built-in Reader</title>
+  <link rel="stylesheet" href="reader.css">
+  <link rel="icon" type="image/png" href="../icons/icon32.png">
+</head>
+<body>
+  <div class="reader-container">
+    <!-- Header -->
+    <header class="reader-header">
+      <div class="header-left">
+        <img src="../icons/icon32.png" alt="Logo" class="reader-logo">
+        <div>
+          <h1 id="reader-title">PDF Snapper Reader</h1>
+          <span class="badge-offline">100% Offline</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <label for="file-input" class="btn-tool">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span>Open PDF File</span>
+        </label>
+        <input type="file" id="file-input" accept="application/pdf" style="display: none;">
+
+        <div class="url-input-wrap">
+          <input type="text" id="pdf-url-input" placeholder="Or paste PDF URL..." class="url-input">
+          <button id="btn-load-url" class="btn-tool-small">Load</button>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <button id="btn-snap-all" class="btn-snap-all" disabled title="Capture high-resolution screenshots of all pages into Offline Gallery">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          <span>Snap & Save All Pages</span>
+        </button>
+        <button id="btn-view-gallery" class="btn-tool" title="Open Offline Gallery">
+          Gallery
+        </button>
+      </div>
+    </header>
+
+    <!-- Content / PDF Viewer Area -->
+    <main class="viewer-area" id="viewer-area">
+      <!-- Drag & drop initial placeholder -->
+      <div class="drop-zone" id="drop-zone">
+        <div class="drop-icon">📑</div>
+        <h2>Drop a PDF here to view & capture</h2>
+        <p>Or click <b>"Open PDF File"</b> above or paste a PDF web link</p>
+        <div class="feature-pills">
+          <span class="pill">⚡ Instant Page Snapping</span>
+          <span class="pill">🔒 100% Offline & Private</span>
+          <span class="pill">📦 Export to Clean PDF / ZIP</span>
+        </div>
+      </div>
+
+      <!-- PDF Pages Container -->
+      <div class="pdf-pages-scroll" id="pdf-pages-scroll" style="display: none;">
+        <!-- Canvas pages rendered here -->
+      </div>
+    </main>
+  </div>
+
+  <!-- Progress Modal -->
+  <div class="snap-progress-modal" id="snap-progress-modal" style="display: none;">
+    <div class="snap-progress-box">
+      <div class="snap-spinner"></div>
+      <h3 id="snap-status-title">Snapping PDF Pages...</h3>
+      <p id="snap-status-desc">Rendering page 1...</p>
+      <div class="snap-bar-wrap">
+        <div class="snap-bar-fill" id="snap-bar-fill"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Local Libraries -->
+  <script src="../libs/pdf.min.js"></script>
+  <script src="../viewer/db.js"></script>
+  <script src="reader.js"></script>
+</body>
+</html>
